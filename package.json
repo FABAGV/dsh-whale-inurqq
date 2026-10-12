@@ -1,0 +1,44 @@
+{
+  "name": "dsh-whale-inurqq",
+  "version": "0.1.0",
+  "description": "把 QQ 接入 DeepSeek Harness：QQ 变成 DSH 的任务入口、语境来源和对话对象（OneBot 11 客户端）",
+  "type": "module",
+  "main": "lib/index.js",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "qq",
+    "onebot",
+    "onebot11"
+  ],
+  "files": [
+    "lib",
+    "tools/mock-napcat.mjs",
+    "tools/standalone-harness.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.0",
+    "ws": "^8.18.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FABAGV/dsh-whale-inurqq.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FABAGV/dsh-whale-inurqq/issues"
+  },
+  "homepage": "https://github.com/FABAGV/dsh-whale-inurqq#readme",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "license": "MIT"
+}

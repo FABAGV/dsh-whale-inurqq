@@ -1,0 +1,12 @@
+# ============================================================================
+# dsh-whale-inurqq — DSH bundle patch
+# ============================================================================
+# 把本插件挂载进 profile。安装方式：
+#   dsh plugin --profile <name> add link:<本目录绝对路径>
+# 或从 npm：
+#   dsh plugin --profile <name> add dsh-whale-inurqq
+# ============================================================================
+
+- insert:
+    - id: dsh-whale-inurqq
+      name: dsh-whale-inurqq

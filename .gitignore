@@ -1,0 +1,29 @@
+# ============================================================================
+# 运行时数据 / 凭据：绝不入库
+# 这些文件都是本机在 $DSH_HOME（默认 ~/.dsh）下生成的，带着既是隐私泄露，
+# 也会污染别人 clone 下来的环境。
+# ============================================================================
+
+# DSH 凭据与配置
+.credentials.yaml
+.env
+.env.*
+gh-token.txt
+*.pem
+*.key
+
+# 插件自己的运行时状态（defaultLogFile / StateStore / Corpus 都落在 $DSH_HOME/dsh-whale-inurqq）
+plugin.log
+state.json
+corpus/
+dsh-whale-inurqq/
+
+# 语料库与测试残留（可能含真实聊天原文）
+qq-projects/
+qq-testenv/
+
+# 依赖与临时物
+node_modules/
+*.log
+*.bak
+*.tmp

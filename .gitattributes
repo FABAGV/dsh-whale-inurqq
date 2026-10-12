@@ -1,0 +1,13 @@
+# 统一按 LF 入库：
+#  - 仓库里全是 UTF-8 中文源码/文档，CRLF/LF 混用会让 diff 出现整文件重写
+#  - Windows 上 core.autocrlf=true 时，PowerShell 脚本按 CRLF 检出更稳
+#    （但本仓库的 .ps1 都是开发辅助脚本，且多数不随包发布，统一 LF 即可）
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.wav binary
+*.mp3 binary
+*.zip binary
+*.ico binary

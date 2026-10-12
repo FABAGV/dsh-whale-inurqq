@@ -1,0 +1,28 @@
+# 预飞用：与 desktop profile 里 dsh-whale-inurqq 的配置保持一致，
+# 用来验证 loader 会按 Config Schema 校验这份配置而不报错。
+#
+# ⚠️ 这是个**本机模板**：请把下面两处换成你自己的值再跑。
+#    `tasks.workspaceRoot` 必须是已存在的真实目录；
+#    access token **不要写在这里** —— 用 DSH 凭据（键名 `QQ_ONEBOT_TOKEN`），
+#    或临时用 `DSH_QQ_PREFLIGHT_TOKEN` 环境变量喂进去。
+- id: dsh-whale-inurqq
+  disabled: false
+  config:
+    logLevel: info
+    tasks:
+      workspaceRoot: '<你的 QQ 项目目录，例如 D:\qq-projects>'
+    connection:
+      mode: reverse
+      mount: own
+      host: 127.0.0.1
+      reversePort: 6799
+      reversePath: /
+      tokenRef: QQ_ONEBOT_TOKEN
+      token: ''
+    participation:
+      groupMode: mention
+    scope:
+      groups: []
+      friends: []
+      blockedGroups: []
+      blockedFriends: []
