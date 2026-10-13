@@ -335,7 +335,13 @@ curl http://127.0.0.1:6700/dsh-whale-inurqq/status
 | `qq_memory` | 查看/删除该会话的常驻记忆 |
 | `qq_dispatch` | ⚠️ **只在 v2 回滚路径（`conversation.enabled=false`）注册**：把一件要动手的事派给独立任务会话 |
 
-`qq_send` 挂了 **scope 门控**：越界的会话会在工具派发前被拒绝，而不是靠提示词约束。
+**写类 QQ 工具都挂了 scope 门控**：`qq_send`、`qq_dispatch`、`qq_memory`、
+以及带 `cancel_task_id` 的 `qq_tasks` —— 越界的会话会在工具派发前被拒绝，
+而不是靠提示词约束。门控判据是"**这个工具会不会产生写副作用**"，不是按名字枚举
+（早先只列了 `qq_send` / `qq_dispatch`，于是 `qq_memory` 能清掉别的会话的常驻记忆）。
+`qq_list_chats` 也按同一份 scope 过滤：只列允许范围内的会话
+（`scope.groups` / `scope.friends` 为空数组时 = 全部允许，行为与从前一致）。
+只读工具（`qq_alive` / `qq_history` / 不带 `cancel_task_id` 的 `qq_tasks`）不在门控里。
 
 **规则 4「进度靠问」的落点就是 `qq_alive` + `qq_tasks`**：用户问"好了吗"时，
 常驻会话必须先查真实状态再如实回答 —— 而不是把"它还在不在"交给模型猜。

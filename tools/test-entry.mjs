@@ -335,10 +335,19 @@ function emitSessionEvent(sessionId, type, data) {
 /**
  * 推一个 `tool/result`。
  *
- * ⚠️ 形状**照抄真实实现**（`dsh-agent-loop/lib/index.js:691-706` 的 appendToolResult）：
- *   `data.message` 是 `createToolResultMessage({callId, content, isError})`
- *   —— `callId` 与 `isError` 都在 **message** 上，不在 data 顶层。
- *   fake 写宽了（比如把 callId 放顶层）就会漏掉"回传把失败的写操作也算进去"这种 bug。
+ * ⚠️ 形状**照抄真实实现的产出**，不是它的入参：
+ *   `dsh-agent-loop/lib/index.js:691-696` 调
+ *   `createToolResultMessage({ callId, content, isError })`，
+ *   而该函数（`dsh-llm/lib/index.js:101-112`）**产出**的是
+ *   `createMessage({ role:'tool', source:{ kind:'tool', callId }, toolCallId, content, isError })`
+ *   —— 所以 message 上是 **`toolCallId`**（外加 `source.callId`），
+ *   **没有顶层 `callId`**；`isError` 在 message 上，不在 data 顶层。
+ *
+ * ⚠️ 这里曾经写成"把 `createToolResultMessage` 的**入参**当成消息本身"，
+ *   message 上放了一个真实世界里不存在的顶层 `callId`。那不是"漏报"，而是
+ *   **反向**的：插件读 `message.callId` 在真机上恒为空，"它动过哪些文件"整条功能
+ *   在生产里从未生效，而断言全绿 —— 测试把 bug 冻住了。fake 的字段名必须与
+ *   真实产出一致，否则它证明的只是"我们自己和自己一致"。
  *
  * @param {string} sessionId
  * @param {string} callId
@@ -350,7 +359,8 @@ function emitToolResult(sessionId, callId, { isError = false, text = 'ok' } = {}
     step: 1,
     message: {
       role: 'tool',
-      callId,
+      source: { kind: 'tool', callId },
+      toolCallId: callId,
       content: [{ type: 'tool-result', callId, isError, content: [{ type: 'text', text }] }],
       isError,
     },
