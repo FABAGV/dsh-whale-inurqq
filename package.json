@@ -1,6 +1,6 @@
 {
   "name": "dsh-whale-inurqq",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "把 QQ 接入 DeepSeek Harness：QQ 变成 DSH 的任务入口、语境来源和对话对象（OneBot 11 客户端）",
   "type": "module",
   "main": "lib/index.js",
