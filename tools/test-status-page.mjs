@@ -70,11 +70,42 @@ console.log('2. 转义与格式化')
     const out = renderStatusPage({ alive: { alive: false, evidence: { silentForMs: null, sinceTickMs: null } } })
     return out.includes('最后事件时间未知') && !out.includes('最后事件 0')
   })())
+  check('★ 从未收到事件（silentForMs=0 且无 lastEventAt）→ 写“尚未收到事件”', (() => {
+    const out = renderStatusPage({
+      alive: {
+        alive: false,
+        because: ['连接层未初始化（webServer 服务未就绪）'],
+        evidence: { silentForMs: 0, sinceTickMs: null, lastEventAt: 0, eventSilenceMs: 90000 },
+      },
+      health: { verdict: 'attention', issues: ['连接层未初始化（webServer 服务未就绪）'] },
+    })
+    return out.includes('尚未收到事件') && !out.includes('最后事件 0 毫秒前')
+  })())
+  check('有 lastEventAt 时 0ms 静默仍准确显示“0 毫秒前”', (() => {
+    const out = renderStatusPage({
+      alive: { alive: true, evidence: { silentForMs: 0, lastEventAt: 1760000000000, sinceTickMs: 10 } },
+    })
+    return out.includes('最后事件 0 毫秒前')
+  })())
   check('humanBytes：B/KB/MB',
     humanBytes(900) === '900 B' && humanBytes(2048) === '2.0 KB' && humanBytes(3 * 1024 * 1024) === '3.0 MB')
   check('workspaceRoot 问题给出绝对路径建议', nextStepFor('tasks.workspaceRoot 未配置').includes('绝对路径'))
   check('token 问题给出凭据建议', nextStepFor('未配置 access token').includes('QQ_ONEBOT_TOKEN'))
   check('认不出的问题不硬编建议', nextStepFor('某种没见过的错误') === '')
+  // 顺序回归：宽词（连接/交班）不能盖住具体原因
+  check('★ webServer 未就绪 → 指向 DSH，而不是 NapCat', (() => {
+    const step = nextStepFor('连接层未初始化（webServer 服务未就绪）')
+    return step.includes('webServer') && !step.includes('NapCat')
+  })())
+  check('★ 交班流程异常 → 指向 lastError/日志，而不是“还没测出窗口”', (() => {
+    const step = nextStepFor('有 2 次交班流程异常，最近一次：boom')
+    return step.includes('lastError') && !step.includes('跑完一个回合')
+  })())
+  check('★ 归档失败 → 指向 lastError/日志', nextStepFor('有 1 次旧会话归档失败（交班仍完成）').includes('lastError'))
+  check('真的没测到 contextWindow 时才说“跑完一个回合”',
+    nextStepFor('还没有测量到 contextWindow').includes('跑完一个回合'))
+  check('派活链路问题给出 bridge.stats.lastError 建议',
+    nextStepFor('建过工作区但从未建成会话 —— 派活链路可能有问题').includes('bridge.stats.lastError'))
 }
 
 // ===========================================================================
