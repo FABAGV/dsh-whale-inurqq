@@ -6,6 +6,23 @@
 
 ---
 
+## 三分钟接入（先跑通，再看设计）
+
+1. **装上**：`dsh plugin --profile <你的profile> add dsh-whale-inurqq`（本仓库源码用 `add link:<目录绝对路径>`），然后重启 DSH。
+2. **填工作区**：设置 → 插件 → dsh-whale-inurqq，把 `tasks.workspaceRoot` 填成一个**绝对路径**（如 `D:\qq-projects`，目录要存在且可写）。
+3. **配 NapCat**：在它的 `config/onebot11.json` 里加一个反向 WebSocket 客户端，`url` 指向 `ws://127.0.0.1:6700`，`messagePostFormat` 必须是 `array`，`token` 填一个强口令（详见[配置 NapCat](#配置-napcat)）。
+4. **填同一个 token**：在 DSH 凭据里加 `QQ_ONEBOT_TOKEN`（推荐），或在插件配置的 `connection.token` 里直接填。
+5. **打开体检页**：<http://127.0.0.1:6700/dsh-whale-inurqq/status>
+
+体检页顶部一句话就能回答"现在能不能用"：
+
+- 绿色「**一切正常**」→ 回到 QQ 私聊 bot 发一句"在吗"，应该会收到回复；
+- 黄色「**有 N 项需要处理**」→ 每条问题下面都写了**下一步该动哪里**，照着做即可。
+
+> 体检页是**只读**的，不加载任何外部资源；脚本和监控仍然拿 JSON（`curl` 默认就是 JSON，或加 `?format=json`）。
+
+---
+
 ## 它做什么
 
 ```
@@ -264,13 +281,25 @@ advanced:
 
 ## 状态查询
 
-插件在反向 WS 端口上暴露一个只读状态端点：
+**用浏览器打开（推荐）**：<http://127.0.0.1:6700/dsh-whale-inurqq/status>
 
-```bash
-curl http://127.0.0.1:6700/dsh-whale-inurqq/status
-```
+返回的是一张**体检页**（不是裸 JSON）：顶部一句话结论（「一切正常」/「有 N 项需要处理」/「状态还不完整」），
+下面依次是：
 
-返回连接状态、事件统计、工作区映射、回传来源判定的账目，以及任务调度与任务台账
+- **要处理的事**：每条问题下面附一句"下一步该动哪里"（工作区没配、token 没配、端口被占、协议端没连上……）；
+- **它现在到底还活着吗**：判据逐条列出，以及"最后事件多久前、计时器多久前跑过"；
+- **关键状态**：连接数与 selfId、工作区、语料库规模、常驻对话开关、收到多少消息、回传判定；
+- **交班进度**：每个常驻会话第几代、当前 token、占阈值百分比；
+- **配置摘要与日志路径**：排障时一眼找到 `plugin.log`。
+
+页面行为：
+
+- **只读**：没有任何写操作，也不会改配置；
+- **不加载外部资源**（字体/脚本/图片），断网也能看；
+- 所有动态值都做过 HTML 转义；响应带 `x-content-type-options: nosniff`；
+- 脚本/监控请取 JSON：`curl` 默认就是 JSON，也可以显式加 `?format=json`（与页面里的「查看原始 JSON」链接一致）。
+
+JSON 里包含连接状态、事件统计、工作区映射、回传来源判定的账目，以及任务调度与任务台账
 （**只在 v2 回滚路径上非 null**）。
 出问题时先看 `health.verdict`：票数不为 ok 时 `health.issues` 会直接说哪里不对
 （例如"有 N 条任务会话归档失败""有 N 条任务在排队"）。
@@ -460,6 +489,14 @@ $DSH_HOME/dsh-whale-inurqq/corpus/<chatType>-<chatId>/<YYYY-MM-DD>.jsonl
 - 端口被占用时插件会**每 2 秒自动重试 20 次**（常见于上次实例没退干净）；日志里能看到重试计数
 - 排查插件自身：`$DSH_HOME/dsh-whale-inurqq/plugin.log`（桌面端插件 stdout 归 Electron 管，这份文件是唯一能看到内部日志的地方）
 
+**体检页打不开**
+- 默认（`connection.mount: own`）用 `http://127.0.0.1:<connection.reversePort>/dsh-whale-inurqq/status`；
+  端口被改过就用改后的值，不是永远 6700
+- `mount: dsh` 时状态端点挂在 DSH 的 web 服务上：把主机与端口换成 DSH 的地址，路径不变
+- 页面显示「**不活着**」不是"页面坏了"：看它下面列出的 `because`，通常是没有协议端连接、
+  事件静默超过 90 秒、或事件循环被长任务堵住
+- 页面显示「**有 N 项需要处理**」：逐条照着"下一步"改；改完刷新页面即可，不需要重启
+
 **改了代码/配置但没生效**
 - 桌面端启用/禁用插件**不会**刷新 ESM 模块缓存 —— 需要**重启 DSH**
 
@@ -513,6 +550,9 @@ $DSH_HOME/dsh-whale-inurqq/corpus/<chatType>-<chatId>/<YYYY-MM-DD>.jsonl
 ```bash
 npm install
 
+# 状态页纯函数（不需要 DSH / NapCat）：内容协商、转义、字段缺失
+node tools/test-status-page.mjs
+
 # 方式一：独立测试台（不依赖 DSH）
 node tools/standalone-harness.mjs      # 终端 A
 node tools/mock-napcat.mjs --once      # 终端 B
@@ -528,15 +568,15 @@ node tools/mock-napcat.mjs --once --url ws://127.0.0.1:6701   # 终端 B
 连接层、归一化、去重、路由决策、任务派活、进度回传与工具门控；
 它的脚本里也包含闲聊、两条并行任务，用来肉眼确认分流是否正确。
 
-`tools/test-entry.mjs` 跑 280 条断言，**两趟都必须全绿**：
+`tools/test-entry.mjs` **两趟都必须全绿**（179 + 264 条）：
 
 | 一趟 | 断言数 | 它证明什么 |
 |---|---|---|
-| `ENTRY_CONV=0` | 173 | 关掉常驻对接会话开关后行为与 v2 一致（回归保命线；原有 159 条逐条保留）＋ 回传来源门控在 v2 路上也生效 |
-| `ENTRY_CONV=1` | 258 | 常驻对接会话 / 交班 / 碎片记忆 / 前台约定 / 存活检测 / **turn 来源门控与"不推还在跑"** |
+| `ENTRY_CONV=0` | 179 | 关掉常驻对接会话开关后行为与 v2 一致（回归保命线；原有 159 条逐条保留）＋ 回传来源门控在 v2 路上也生效 ＋ 状态页两种呈现 |
+| `ENTRY_CONV=1` | 264 | 常驻对接会话 / 交班 / 碎片记忆 / 前台约定 / 存活检测 / **turn 来源门控与"不推还在跑"** / **状态页两种呈现** |
 
 两趟共用的那些段（待办判据 4、分类器 44、M2 12、工具 18、Schema 13、语料库 8、
-断开实测 11）**逐条不变**：它们与新需求不冲突，是"没有回归"的证据。
+状态端点 6、断开实测 11）**逐条不变**：它们与新需求不冲突，是"没有回归"的证据。
 
 除了 mock 驱动的链路，它还开了一条**进程内的受控 OneBot 连接**：
 v2 回滚路径上的并发上限/排队/单任务取消/归档顺序/"回合结束了但会话还有待办"，
@@ -577,6 +617,7 @@ workspace 路径必须完全限定且目录已存在、同路径注册幂等、�
 |---|---|---|
 | `tools/mock-napcat.mjs`、`tools/standalone-harness.mjs` | ✅ | 任何机器上都能跑的测试工具（mock 协议端、独立测试台） |
 | `tools/test-entry.mjs` | ✅ | 入口集成测试本体（断言都在这里） |
+| `tools/test-status-page.mjs` | ✅ | 状态页的纯函数测试（内容协商、HTML 转义、字段缺失） |
 | `tools/verify-bundle-resolution.mjs` | ✅ | 验证作为 bundle 能被正确解析与加载 |
 | `tools/run-repro.ps1`、`tools/run-conv-test.ps1`、`tools/watch-6700.ps1` | ✅ | 测试编排与连接观察。**路径全部从脚本位置推导**，证据落系统临时目录 |
 | `tools/preflight-patch.yml` | ✅ | 配置 Schema 预飞模板（`workspaceRoot` 是占位符、`token` 为空，**不含任何凭据**） |

@@ -1644,6 +1644,30 @@ try {
 }
 runChecks('语料库断言', corpusChecks)
 
+// ── 状态端点的两种呈现 ────────────────────────────────────────────────
+// 同一份快照：curl/脚本默认拿 JSON（行为不能变），浏览器地址栏打开拿体检页。
+// 这几条同时验证 `?format=` 查询串不会把路由打成 404。
+{
+  const endpoint = `http://127.0.0.1:${PORT}/dsh-whale-inurqq/status`
+  const jsonRes = await fetch(endpoint)
+  const jsonType = String(jsonRes.headers.get('content-type') ?? '')
+  const jsonText = await jsonRes.text()
+  const htmlRes = await fetch(endpoint, { headers: { accept: 'text/html' } })
+  const htmlType = String(htmlRes.headers.get('content-type') ?? '')
+  const htmlText = await htmlRes.text()
+  const forced = await fetch(`${endpoint}?format=json`, { headers: { accept: 'text/html' } })
+  const forcedType = String(forced.headers.get('content-type') ?? '')
+
+  runChecks('状态端点呈现', [
+    ['默认（Accept: */*）仍是 JSON', jsonType.includes('application/json') && jsonText.trimStart().startsWith('{')],
+    ['浏览器 Accept: text/html 拿到体检页', htmlType.includes('text/html') && htmlText.includes('dsh-whale-inurqq 体检')],
+    ['体检页带 x-content-type-options: nosniff', htmlRes.headers.get('x-content-type-options') === 'nosniff'],
+    ['?format=json 能覆盖 Accept', forced.status === 200 && forcedType.includes('application/json')],
+    ['查询串不影响路由（带 ?format= 不 404）', forced.status === 200],
+    ['体检页给出结论（正常 / 需处理 二者其一）', htmlText.includes('一切正常') || htmlText.includes('需要处理')],
+  ])
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // 受控阶段的公共工具（v2 与 v3 两段都用）
 // ══════════════════════════════════════════════════════════════════════
