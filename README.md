@@ -57,6 +57,12 @@ QQ 里发消息  →  插件归一化  →  分类：闲聊 / 任务（只决定
 `source.rpcId`（`dsh-api-session-controller/lib/index.js:856-859`），那条消息落成
 会话事件 `user/message`（`dsh-agent-loop/lib/index.js:1061`）。
 
+⚠️ 事件形状：`user/message` 的 `event.data` **就是消息本体**
+（宿主是 `session.append('user/message', message)`），判据字段是 `data.source.rpcId`，
+**不是** `data.message.source.rpcId`。0.1.3 读错了这一层，真机上恒为 `undefined`
+→ 每个回合都被当成"来源不明"丢掉，表现就是入站与 agent 回复都正常、QQ 侧一条回传都收不到
+（`relay.relayed === 0`、`relay.provenanceDecided === 0`）。0.1.4 起两种形状都认。
+
 **为什么这条重要**：常驻对接会话同时也是用户会在 GUI 里直接打开的会话。
 没有这条门控，用户在电脑前自己敲一句话，QQ 那边就会莫名收到一段回传。
 
@@ -308,9 +314,14 @@ JSON 里包含连接状态、事件统计、工作区映射、回传来源判定
 
 | 字段 | 含义 |
 |---|---|
-| `provenanceDecided` | 判定过多少次"这个回合是谁发起的" |
-| `skippedForeign` | 有多少个事件因为"这个回合不是插件发起的"而**整个跳过**（GUI 那一摊） |
+| `provenanceDecided` | 判定过多少次"这个回合是谁发起的"（plugin 与 foreign 都算） |
+| `skippedForeign` | 有多少个事件因为"这个回合**判明**不是插件发起的而**整个跳过**（GUI 那一摊） |
+| `provenanceUnknown` | 有多少个事件因为来源**还没定型**而跳过。正常应恒为 0；它在涨说明这个回合没等到可用的 `user/message`（事件没送到，或形状读错）——先查这一栏，再看 `skippedForeign` |
 | `trackedTurns` | 当前记着来源的会话数 |
+
+> 排障锚点：`relayed` 恒为 0 且 `provenanceDecided` 恒为 0、`provenanceUnknown` 在涨，
+> 说明 `user/message` 根本没被定型（0.1.3 就是这样整轮丢回传的）。
+> 宿主的事件形状是 `data` **即消息本体**（`data.source.rpcId`），不是 `data.message`。
 
 ### `alive`：它现在到底还活着吗
 
@@ -520,7 +531,8 @@ $DSH_HOME/dsh-whale-inurqq/corpus/<chatType>-<chatId>/<YYYY-MM-DD>.jsonl
   进度靠问（"好了吗"→ 常驻会话查 `qq_alive` + `qq_tasks` 再如实回答）
 - **只有插件发起的回合才回传**：用户在 DSH GUI 里自己发起的 turn 一条都不推 QQ
   （判据见[回传的判据](#回传的判据是这个-turn-是谁发起的)）。状态端点的
-  `relay.skippedForeign` 记着因此跳过了多少事件
+  `relay.skippedForeign` 记着因此跳过了多少事件；来源没定型的那些进 `relay.provenanceUnknown`
+  （正常为 0，涨了就说明 `user/message` 没等到 —— 0.1.3 的回传全丢就是这个症状）
 - 回传会带上**它动了什么**（改了/新建了哪些文件）。两个信号源：
   `deliverables/presented` 会话事件（agent 自己声明的交付物，标成"交付物"），
   以及写类工具（`write` / `edit` / `str_replace_editor` 的写命令）的

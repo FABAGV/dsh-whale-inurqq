@@ -160,6 +160,13 @@ console.log('3. 健康快照')
     html.includes('<meta charset="utf-8">') && html.includes('name="viewport"'))
   check('不加载任何外部资源（断网可用）', !/<(script|link|img|iframe)\b/i.test(html))
   check('通过项收在 details 里，不占首屏', html.includes('<details>') && html.includes('通过的检查（1 项）'))
+
+  // 来源未定型是异常，必须被点名（0.1.3 的回传全丢就是这一栏在涨、页面却只显示 0）
+  const anomaly = JSON.parse(JSON.stringify(healthy))
+  anomaly.relay.provenanceUnknown = 7
+  const anomalyHtml = renderStatusPage(anomaly)
+  check('来源未定型的事件在体检页上被点名', anomalyHtml.includes('来源未定型 7 次'))
+  check('来源未定型时给了排查方向', anomalyHtml.includes('user/message'))
 }
 
 // ===========================================================================

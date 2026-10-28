@@ -1,5 +1,33 @@
 # 变更记录
 
+## 0.1.4 — 2026-10-28
+
+### 修复：QQ 回传恒为 0（入站正常、agent 也回复了，但一条都发不出去）
+
+- **`user/message` 的消息形状读错了一层**。宿主是
+  `session.append('user/message', message)`，事件里 `data` **就是消息本体**
+  （`data.source.rpcId`）；`relay.js` 读的是 `data.message.source.rpcId`，真机上恒为
+  `undefined` → 来源永远定型不了（`provenanceDecided === 0`）→ 主守卫把每个回合的
+  正文都当成 GUI 回合丢掉（`relayed === 0`，`skippedForeign` 一直涨）。
+  现在用 `userMessageFromEvent()` 同时认「data 即消息」与旧/假宿主的 `{message}` 包装。
+- **`provenanceUnknown` 不再是一栏死数字**：来源未定型的事件单独计数（以前混进
+  `skippedForeign`，把"根本没判出来"读成"判定正常"）；一个回合到 `turn/end` 仍未定型时
+  会打一条 warn，不再静默丢完整轮。
+- **假宿主改成真实形状**。`tools/test-entry.mjs` 发 `user/message` 时一直包着
+  `{message}`，于是"读错形状"在测试里永远绿、在真机上整轮丢消息 —— 又一次
+  「假宿主把 bug 冻住」（同 `emitToolResult` 那次的教训）。现在 data 直接是消息本体，
+  `surfaceOp` 也放回事件顶层；改回旧代码跑这趟会红 8 条（含 `来源-e/f/g`），修复后全绿。
+- 新增 4 条纯函数断言锁住两种形状；README 补上形状说明与 `provenanceUnknown` 口径。
+- **体检页与 health 都不再放过这种故障**：`relayed === 0 && provenanceUnknown > 0`
+  时 `health.issues` 直接点名"回传一条都没发出去、来源未定型 N 个事件"；
+  页面同一栏也会写出「来源未定型 N 次（异常）」。
+
+### 验证
+
+- `ENTRY_CONV=1`：268/268 通过；`ENTRY_CONV=0`：183/183 通过。
+- 形状依据：宿主源码（`dsh-session` / `dsh-agent-loop` 0.2.1-rc.2）与本机会话日志
+  `session.v4.jsonl.zstd` 实测，不是猜。
+
 ## 0.1.3 — 2026-10-21
 
 ### 修复（来自独立复核的两条误导）

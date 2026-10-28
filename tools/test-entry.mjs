@@ -35,7 +35,7 @@ import { createLogger } from '../lib/log.js'
 import { classifyMessage, shouldRespond, isAmbiguousAsk, taskHint, CLASSIFY } from '../lib/classify.js'
 import { assessSessionWork } from '../lib/dsh/pending.js'
 import { judgeAlive, probeTasks, LOOP_STALL_MS, EVENT_SILENCE_MS } from '../lib/alive.js'
-import { filePathFromToolCall, filesFromPresented } from '../lib/dsh/relay.js'
+import { filePathFromToolCall, filesFromPresented, userMessageFromEvent } from '../lib/dsh/relay.js'
 
 const PORT = Number(process.env.ENTRY_PORT ?? 6700)
 /**
@@ -160,9 +160,17 @@ function appendEvent(sessionId, event) {
   return true
 }
 
-/** 往会话日志里塞一条用户消息（交班整理的输入） */
+/**
+ * 往会话日志里塞一条用户消息（交班整理的输入）。
+ *
+ * ⚠️ `data` **就是消息本体**，不是 `{message}` 包装：真实宿主
+ *    `dsh-agent-loop` 是 `session.append('user/message', message)`，落盘事件形如
+ *    `{type:'user/message', data:{role:'user', content, source:{kind:'user', rpcId}}}`。
+ *    真机会话日志（0.2.1）实测确认过。fake 早先包了一层 `{message}`，
+ *    结果把 relay 里读错形状的 bug 冻成了"测试全绿"（同 `emitToolResult` 那次的教训）。
+ */
 function appendUserMessage(sessionId, text) {
-  return appendEvent(sessionId, { type: 'user/message', data: { message: { role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'r1' } } } })
+  return appendEvent(sessionId, { type: 'user/message', data: { role: 'user', content: [{ type: 'text', text }], source: { kind: 'user', rpcId: 'r1' } } })
 }
 
 /** 往会话日志里塞一条助手消息 */
@@ -271,7 +279,8 @@ function simulateTurn(sessionId) {
     rec.turn = (rec.turn ?? 0) + 1
   }
   const turn = rec?.turn ?? 1
-  const send = (type, data) => emitEvent('session/event', session, { type, seq: ++idSeq, time: Date.now(), data })
+  /** `extra` 是事件**顶层**的附加字段（`surfaceOp` / `sourceEventSeqs`），不是 data 里的 */
+  const send = (type, data, extra = {}) => emitEvent('session/event', session, { type, seq: ++idSeq, time: Date.now(), data, ...extra })
 
   setTimeout(() => {
     if (rec) rec.startedTurn = turn
@@ -283,22 +292,23 @@ function simulateTurn(sessionId) {
      *   所以 user/message **一定在 turn/start 之后**、在任何正文之前落盘。
      *
      * 为什么 fake 必须发它：插件的回传按 turn 来源门控（`lib/dsh/relay.js` 规则 2），
-     * 而来源的唯一判据就是这条会话事件里的 `data.message.source.rpcId` ——
+     * 而来源的唯一判据就是这条会话事件的 `data.source.rpcId`（**data 就是消息本体**，
+     * 不是 `{message}` 包装；见 `appendUserMessage` 的注释）——
      * 命中插件投递时登记的那个 requestId 才算"插件发起的回合"。
      * fake 少了它，插件只能判成"不是插件发起的"→ 什么都不回传（真机必炸的死法）。
      */
     // ⚠️ 即使这个回合没 claim 到新消息（inbox 空了、或是宿主续跑的
-    //    后续回合），也必须发一条 `user/message`：真实実现里 pre-step 每次都会
+    //    后续回合），也必须发一条 `user/message`：真实实现里 pre-step 每次都会
     //    重新 claim，那条 prompt 消息会再次落盘（来源不变）。fake 漏了这一条，
     //    插件就只能把这个回合判成"来源不明" —— 而来源不明的回合是不回传、也不收敛的。
     const lineage = rec?.claimedThisTurn?.length ? rec.claimedThisTurn : rec?.lastClaimedSource ? [rec.lastClaimedSource] : []
     for (const m of lineage) {
-      send('user/message', {
-        turn,
-        step: 0,
-        message: { id: m.id ?? `m-lineage-${turn}`, role: m.role ?? 'user', content: m.content ?? [], source: m.source },
-        surfaceOp: 'append',
-      })
+      // 形状照抄真实落盘事件：data = message 本体，surfaceOp 在事件顶层
+      send(
+        'user/message',
+        { id: m.id ?? `m-lineage-${turn}`, role: m.role ?? 'user', content: m.content ?? [], source: m.source },
+        { surfaceOp: 'append' },
+      )
     }
     if (rec) rec.claimedThisTurn = []
   }, 60)
@@ -326,10 +336,10 @@ function simulateTurn(sessionId) {
   setTimeout(() => endTurn(sessionId, { kind: 'completed' }), 820)
 }
 
-/** 往会话里推一个任意类型的会话事件（用于审批审计、user/message 等） */
-function emitSessionEvent(sessionId, type, data) {
+/** 往会话里推一个任意类型的会话事件（用于审批审计、user/message 等）；`extra` 是事件顶层字段 */
+function emitSessionEvent(sessionId, type, data, extra = {}) {
   const rec = liveSessions.get(sessionId)
-  emitEvent('session/event', rec?.session ?? { id: sessionId }, { type, seq: ++idSeq, time: Date.now(), data })
+  emitEvent('session/event', rec?.session ?? { id: sessionId }, { type, seq: ++idSeq, time: Date.now(), data, ...extra })
 }
 
 /**
@@ -394,13 +404,14 @@ function startToolTurn(sessionId) {
   }
   emitSessionEvent(sessionId, 'turn/start', { turn })
   if (carry) {
-    // 顺序照抄真实实现：turn/start 先落盘，user/message 紧随其后
-    emitSessionEvent(sessionId, 'user/message', {
-      turn,
-      step: 0,
-      message: { id: `m-carry-${turn}`, role: 'user', content: carry.content ?? [], source: carry.source },
-      surfaceOp: 'append',
-    })
+    // 顺序与形状照抄真实实现：turn/start 先落盘，user/message 紧随其后，
+    // 且 data 就是消息本体（不是 `{message}` 包装）
+    emitSessionEvent(
+      sessionId,
+      'user/message',
+      { id: `m-carry-${turn}`, role: 'user', content: carry.content ?? [], source: carry.source },
+      { surfaceOp: 'append' },
+    )
   }
   return turn
 }
@@ -1261,6 +1272,28 @@ try {
   pendingChecks.push([`待办判据检查抛错: ${err.message}`, false])
 }
 runChecks('待办判据断言', pendingChecks)
+
+// ── 会话事件形状断言（纯函数）──────────────────────────────────────────
+//
+// 这几条是 0.1.3 "回传恒为 0" 的回归锚：真机 `user/message` 的 `data`
+// **就是消息本体**（`session.append('user/message', message)`），
+// 不是 `{message}` 包装。解析器两种都要认，且不能把垃圾数据当成消息。
+const relayShapeChecks = []
+try {
+  const real = {
+    type: 'user/message',
+    seq: 8,
+    data: { role: 'user', content: [{ type: 'text', text: '在？' }], source: { kind: 'user', rpcId: 'r-1' } },
+  }
+  const legacy = { type: 'user/message', data: { turn: 1, step: 0, message: real.data } }
+  relayShapeChecks.push(['宿主真实形状：data 即消息本体', userMessageFromEvent(real)?.source?.rpcId === 'r-1'])
+  relayShapeChecks.push(['兼容旧/假宿主形状：{message} 包装', userMessageFromEvent(legacy)?.source?.rpcId === 'r-1'])
+  relayShapeChecks.push(['没有 message 时不硬造：非对象 data 返回 null', userMessageFromEvent({ data: 'nope' }) === null])
+  relayShapeChecks.push(['空事件不抛错', userMessageFromEvent(undefined) === null])
+} catch (err) {
+  relayShapeChecks.push([`会话事件形状检查抛错: ${err.message}`, false])
+}
+runChecks('会话事件形状断言', relayShapeChecks)
 
 // ── 分类器断言（纯函数，不依赖连接与时序）──────────────────────────────
 const classifyChecks = []
